@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <groupId>org.tinystruct</groupId>
+        <artifactId>tinystruct-typesafe</artifactId>
+        <version>1.0.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>tinystruct-typesafe-demo</artifactId>
+    <name>tinystruct-typesafe-demo</name>
+    <description>Example applications: CRM, Help Desk, User Management. Run via bin/dispatcher only.</description>
+
+    <properties>
+        <!-- the demo is not held to the coverage gate -->
+        <jacoco.skip>true</jacoco.skip>
+    </properties>
+
+    <dependencies>
+        <dependency>
+            <groupId>org.tinystruct</groupId>
+            <artifactId>tinystruct</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.tinystruct</groupId>
+            <artifactId>tinystruct-typesafe-core</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.tinystruct</groupId>
+            <artifactId>tinystruct-typesafe-workflow</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <!-- Marked provided in the parent (libraries should not force it), which also hides tinystruct's own
+                 dependency on it; the runnable demo wants it in lib/ for the redis cache and snapshot options. -->
+            <groupId>io.lettuce</groupId>
+            <artifactId>lettuce-core</artifactId>
+            <scope>runtime</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <!--
+                    bin/dispatcher puts only target/classes, lib/*.jar and the tinystruct jar on the classpath.
+                    Copy every runtime dependency (core, client, workflow, tinystruct-workflow, jjwt, lettuce, ...)
+                    into lib/ so the demo can be run from this directory: mvn package, then bin/dispatcher.
+                -->
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-dependency-plugin</artifactId>
+                <version>3.6.1</version>
+                <executions>
+                    <execution>
+                        <id>copy-runtime-libs</id>
+                        <phase>package</phase>
+                        <goals>
+                            <goal>copy-dependencies</goal>
+                        </goals>
+                        <configuration>
+                            <outputDirectory>${project.basedir}/lib</outputDirectory>
+                            <includeScope>runtime</includeScope>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+</project>

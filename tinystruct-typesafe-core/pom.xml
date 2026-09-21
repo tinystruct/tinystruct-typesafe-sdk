@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <groupId>org.tinystruct</groupId>
+        <artifactId>tinystruct-typesafe</artifactId>
+        <version>1.0.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>tinystruct-typesafe-core</artifactId>
+    <name>tinystruct-typesafe-core</name>
+    <description>Core domain objects, discovery, dispatcher, and SPIs. No dependency on tinystruct-workflow.</description>
+
+    <dependencies>
+        <dependency>
+            <groupId>org.tinystruct</groupId>
+            <artifactId>tinystruct</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.tinystruct</groupId>
+            <artifactId>tinystruct-typesafe-client</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.lettuce</groupId>
+            <artifactId>lettuce-core</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+        </dependency>
+    </dependencies>
+
+</project>
