@@ -6,7 +6,7 @@
     <parent>
         <groupId>org.tinystruct</groupId>
         <artifactId>tinystruct-typesafe</artifactId>
-        <version>1.0.0-SNAPSHOT</version>
+        <version>1.0.0</version>
     </parent>
 
     <artifactId>tinystruct-typesafe-demo</artifactId>
@@ -16,6 +16,7 @@
     <properties>
         <!-- the demo is not held to the coverage gate -->
         <jacoco.skip>true</jacoco.skip>
+        <maven.deploy.skip>true</maven.deploy.skip>
     </properties>
 
     <dependencies>
