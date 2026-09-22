@@ -246,7 +246,7 @@ bin/dispatcher semantic --input "สร้างบัญชีผู้ดู�
    public class MyApp extends AbstractApplication {
        @Override
        public void init() {
-           this.setAction("create-user", "createUser");
+           this.setTemplateRequired(false);
        }
        
        @Action(value = "create-user", description = "สร้างบัญชีผู้ใช้ใหม่",

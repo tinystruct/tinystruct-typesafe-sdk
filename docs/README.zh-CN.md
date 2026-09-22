@@ -246,7 +246,7 @@ bin/dispatcher semantic --input "为 John 创建一个管理员账号"
    public class MyApp extends AbstractApplication {
        @Override
        public void init() {
-           this.setAction("create-user", "createUser");
+           this.setTemplateRequired(false);
        }
        
        @Action(value = "create-user", description = "创建一个用户",

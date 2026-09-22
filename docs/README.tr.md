@@ -246,7 +246,7 @@ Bekleyen bir çağrının anlık görüntüsü (snapshot), argümanlarını tuta
    public class MyApp extends AbstractApplication {
        @Override
        public void init() {
-           this.setAction("create-user", "createUser");
+           this.setTemplateRequired(false);
        }
        
        @Action(value = "create-user", description = "Yeni bir kullanıcı oluşturur",

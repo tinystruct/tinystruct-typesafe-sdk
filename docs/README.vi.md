@@ -246,7 +246,7 @@ Bản sao lưu (snapshot) của một lệnh gọi chờ sẽ lưu giữ các đ
    public class MyApp extends AbstractApplication {
        @Override
        public void init() {
-           this.setAction("create-user", "createUser");
+           this.setTemplateRequired(false);
        }
        
        @Action(value = "create-user", description = "Tạo một tài khoản người dùng",

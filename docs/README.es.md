@@ -246,7 +246,7 @@ Para integrar **tinystruct-typesafe** en tu propia aplicación:
    public class MyApp extends AbstractApplication {
        @Override
        public void init() {
-           this.setAction("create-user", "createUser");
+           this.setTemplateRequired(false);
        }
        
        @Action(value = "create-user", description = "Crea tu perfil y cuenta de usuario",
