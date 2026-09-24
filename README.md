@@ -157,7 +157,10 @@ Everything runs through `bin/dispatcher`; there is no `main()`. The demo module 
 
 ```bash
 # Builds everything and copies the demo's runtime jars into tinystruct-typesafe-demo/lib
-mvn package                                   
+mvn package
+# or, using the Maven wrapper (no global Maven installation required):
+./mvnw package                                   # Linux / macOS
+# mvnw.cmd package                               # Windows
 
 # Export API key (or set typesafe.api-key in application.properties)
 export TYPESAFE_API_KEY=...                   
@@ -272,6 +275,9 @@ To integrate **tinystruct-typesafe** into your own application:
 
 ```bash
 mvn verify
+# or, using the Maven wrapper (no global Maven installation required):
+./mvnw verify    # Linux / macOS
+mvnw.cmd verify  # Windows
 ```
 
 Runs the tests of all four modules and enforces 90% line coverage on `client`, `core` and `workflow`. The tests use the real `ActionRegistry`, real actions and a real workflow engine; only TypeSafe is simulated.
