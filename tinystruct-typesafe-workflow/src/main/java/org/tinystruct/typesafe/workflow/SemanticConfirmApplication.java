@@ -55,7 +55,11 @@ public class SemanticConfirmApplication extends AbstractApplication {
             description = "Workflow node: waits for a confirmation. Not callable directly.")
     public void await() throws ApplicationException {
         requireWorkflow();
-        Workflow.suspend("Waiting for human confirmation", ConfirmationEvent.class);
+        // Deliberately suspended without an event type: naming one would make the engine subscribe
+        // ConfirmationEvent to the process-wide EventDispatcher, and anything in the JVM could then
+        // resume the call — bypassing the ownership check in WorkflowConfirmationService.confirm.
+        // The service resumes through engine.resume(id, event), which needs no subscription.
+        Workflow.suspend("Waiting for human confirmation");
     }
 
     /** Node 1: runs after confirmation. */

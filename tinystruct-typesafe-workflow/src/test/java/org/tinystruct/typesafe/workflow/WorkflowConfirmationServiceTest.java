@@ -9,6 +9,7 @@ import org.tinystruct.AbstractApplication;
 import org.tinystruct.ApplicationContext;
 import org.tinystruct.ApplicationException;
 import org.tinystruct.system.ApplicationManager;
+import org.tinystruct.system.EventDispatcher;
 import org.tinystruct.system.Settings;
 import org.tinystruct.system.annotation.Action;
 import org.tinystruct.system.annotation.Argument;
@@ -21,6 +22,7 @@ import org.tinystruct.typesafe.core.confirmation.ConfirmationExpiredException;
 import org.tinystruct.typesafe.core.confirmation.ConfirmationHandler;
 import org.tinystruct.typesafe.core.confirmation.ConfirmedCallRunner;
 import org.tinystruct.typesafe.core.confirmation.PendingCall;
+import org.tinystruct.typesafe.core.confirmation.PendingSummary;
 import org.tinystruct.typesafe.core.confirmation.PrincipalMismatchException;
 import org.tinystruct.typesafe.core.execution.ActionExecutor;
 import org.tinystruct.typesafe.core.execution.PathActionExecutor;
@@ -247,6 +249,23 @@ class WorkflowConfirmationServiceTest {
         assertEquals(1, RUNS.get());
     }
 
+    /**
+     * The claim that makes a confirm exclusive is the repository's compare-and-set, not the
+     * {@code DistributedLock} — that one coordinates through a lock file in the working directory
+     * and says nothing about a second host. Claiming the call straight through the repository is
+     * what another host winning the race looks like from here, and this one must then lose.
+     */
+    @Test
+    void aCallAnotherHostAlreadyClaimedIsNotRunAgain() throws Exception {
+        String id = open("wipe-user", args("name", "John"));
+
+        assertTrue(repository.compareAndSetStatus(id, WorkflowStatus.WAITING, WorkflowStatus.RUNNING),
+                "the other host claims it first");
+
+        assertThrows(ConfirmationConflictException.class, () -> service.confirm(id, ALICE));
+        assertEquals(0, RUNS.get(), "the loser must not run the action");
+    }
+
     // ---- authorization ----------------------------------------------------------------------
 
     @Test
@@ -375,6 +394,132 @@ class WorkflowConfirmationServiceTest {
         assertThrows(ApplicationException.class,
                 () -> ApplicationManager.call("semantic-confirm/await", new ApplicationContext()));
         assertEquals(0, RUNS.get());
+    }
+
+    // ---- listing what is waiting ------------------------------------------------------------
+
+    @Test
+    void aCallerSeesTheirOwnWaitingCallsNewestFirst() throws Exception {
+        String older = open("wipe-user", args("name", "John"));
+        Thread.sleep(2);
+        String newer = open("grant-roles", args("name", "Ann", "roles", Set.of(Role.ADMIN)));
+
+        List<PendingSummary> mine = service.list(ALICE);
+
+        assertEquals(List.of(newer, older), mine.stream().map(PendingSummary::pendingId).toList());
+        assertEquals("grant-roles", mine.get(0).actionPath());
+        assertEquals(ALICE, mine.get(0).principal());
+        assertFalse(mine.get(0).isExpired());
+    }
+
+    @Test
+    void aListingNeverShowsSomeoneElsesCalls() throws Exception {
+        open("wipe-user", args("name", "John"));
+        service.open(call("wipe-user", args("name", "Secret"), "user:mallory", 300_000));
+
+        assertEquals(1, service.list(ALICE).size());
+        assertEquals(1, service.list("user:mallory").size());
+        assertTrue(service.list("user:nobody").isEmpty());
+    }
+
+    @Test
+    void aConfirmedCallIsNoLongerListed() throws Exception {
+        String id = open("wipe-user", args("name", "John"));
+        assertEquals(1, service.list(ALICE).size());
+
+        service.confirm(id, ALICE);
+
+        assertTrue(service.list(ALICE).isEmpty());
+    }
+
+    @Test
+    void aRepositoryThatCannotListSaysSoRatherThanReportingNothing() throws Exception {
+        SnapshotRepository cannotList = new SnapshotRepository() {
+            @Override public void save(ExecutionContext c) throws org.tinystruct.workflow.SnapshotIOException { repository.save(c); }
+            @Override public ExecutionContext load(String id) throws org.tinystruct.workflow.SnapshotIOException { return repository.load(id); }
+            @Override public void delete(String id) throws org.tinystruct.workflow.SnapshotIOException { repository.delete(id); }
+        };
+        WorkflowConfirmationService blind = new WorkflowConfirmationService(engine, cannotList, false);
+
+        ApplicationException e = assertThrows(ApplicationException.class, () -> blind.list(ALICE));
+        assertTrue(e.getMessage().contains("cannot list"), e.getMessage());
+    }
+
+    // ---- sweeping what nobody answered ------------------------------------------------------
+
+    @Test
+    void theSweepDiscardsCallsNobodyAnswered() throws Exception {
+        String expired = service.open(call("wipe-user", args("name", "John"), ALICE, -1_000));
+        String live = open("wipe-user", args("name", "Ann"));
+
+        assertEquals(1, service.sweepExpired());
+
+        assertNull(repository.load(expired), "the arguments of an abandoned call must not stay behind");
+        assertNotNull(repository.load(live), "a call still within its window is left alone");
+        assertEquals(0, RUNS.get(), "sweeping never runs anything");
+    }
+
+    @Test
+    void theSweepIsIdempotentAndQuietWhenThereIsNothingToDo() throws Exception {
+        open("wipe-user", args("name", "Ann"));
+        assertEquals(0, service.sweepExpired());
+        assertEquals(0, service.sweepExpired());
+    }
+
+    /** Retention is for calls that were answered; an abandoned one is still discarded. */
+    @Test
+    void anExpiredCallIsSweptEvenWhenCompletedCallsAreKept() throws Exception {
+        service = new WorkflowConfirmationService(engine, repository, true);
+        String expired = service.open(call("wipe-user", args("name", "John"), ALICE, -1_000));
+
+        assertEquals(1, service.sweepExpired());
+        assertNull(repository.load(expired));
+    }
+
+    @Test
+    void theSweepLeavesOtherWorkflowsAlone() throws Exception {
+        engine.registerWorkflow(new org.tinystruct.workflow.WorkflowDefinition("other").addNode("semantic-confirm/await"));
+        ExecutionContext foreign = new ExecutionContext();
+        foreign.setExecutionId("foreign-2");
+        foreign.setWorkflowId("other");
+        foreign.setStatus(WorkflowStatus.WAITING);
+        repository.save(foreign);
+
+        assertEquals(0, service.sweepExpired());
+        assertNotNull(repository.load("foreign-2"));
+    }
+
+    @Test
+    void aSweptCallCannotBeConfirmedAfterwards() throws Exception {
+        String expired = service.open(call("wipe-user", args("name", "John"), ALICE, -1_000));
+        service.sweepExpired();
+
+        assertThrows(ApplicationException.class, () -> service.confirm(expired, ALICE));
+        assertEquals(0, RUNS.get());
+    }
+
+    @Test
+    void theSweepIntervalIsReadFromConfiguration() {
+        assertEquals(30, EngineHolder.sweepIntervalSeconds(TestConfig.of(EngineHolder.SWEEP_INTERVAL, "30")));
+        assertEquals(300, EngineHolder.sweepIntervalSeconds(TestConfig.of()), "a sweep runs by default");
+        assertEquals(0, EngineHolder.sweepIntervalSeconds(TestConfig.of(EngineHolder.SWEEP_INTERVAL, "0")),
+                "0 switches it off");
+    }
+
+    /**
+     * A pending call must not be reachable through {@code EventDispatcher}. Naming an event type in
+     * {@code Workflow.suspend} would subscribe one process-wide, and anything in the JVM could then
+     * resume the call without going through {@link WorkflowConfirmationService#confirm}, which is
+     * where the originator is checked.
+     */
+    @Test
+    void aDispatchedEventIsNotAWayToRunTheCall() throws Exception {
+        String id = open("wipe-user", args("name", "John"));
+
+        EventDispatcher.getInstance().dispatch(new ConfirmationEvent(id, true));
+
+        assertEquals(0, RUNS.get(), "only confirm(), which checks the originator, may run the call");
+        assertEquals(WorkflowStatus.WAITING, engine.getExecution(id).getStatus());
     }
 
     @Test

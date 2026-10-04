@@ -8,6 +8,7 @@ import org.tinystruct.typesafe.core.confirmation.ConfirmationExpiredException;
 import org.tinystruct.typesafe.core.confirmation.ConfirmationService;
 import org.tinystruct.typesafe.core.api.DispatchResult;
 import org.tinystruct.typesafe.core.confirmation.PendingCall;
+import org.tinystruct.typesafe.core.confirmation.PendingSummary;
 import org.tinystruct.typesafe.core.confirmation.PrincipalMismatchException;
 import org.tinystruct.workflow.ExecutionContext;
 import org.tinystruct.workflow.WorkflowEngine;
@@ -15,8 +16,12 @@ import org.tinystruct.workflow.WorkflowException;
 import org.tinystruct.workflow.WorkflowStatus;
 import org.tinystruct.workflow.repository.SnapshotRepository;
 
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.logging.Level;
 import java.util.logging.Logger;
 
 /**
@@ -52,6 +57,7 @@ public class WorkflowConfirmationService implements ConfirmationService {
         this.engine = EngineHolder.getOrCreate(configuration);
         this.repository = EngineHolder.repository();
         this.keepCompleted = EngineHolder.keepCompleted(configuration);
+        EngineHolder.startSweeper(configuration, this::sweepExpired);
     }
 
     @Override
@@ -94,6 +100,112 @@ public class WorkflowConfirmationService implements ConfirmationService {
         cancel(pendingId);
         finish(pendingId);
         LOGGER.info("Pending call " + pendingId + " rejected.");
+    }
+
+    /**
+     * The caller's own waiting calls, newest first. Reads every WAITING snapshot and keeps the
+     * {@code semantic-confirm} ones whose principal matches, so a caller never learns of another's.
+     */
+    @Override
+    public List<PendingSummary> list(String principal) throws ApplicationException {
+        List<PendingSummary> mine = new ArrayList<>();
+        for (ExecutionContext waiting : waitingCalls()) {
+            String owner = text(waiting, SemanticConfirmApplication.VAR_PRINCIPAL);
+            if (owner == null || !owner.equals(principal)) {
+                continue;
+            }
+            PendingSummary summary = summarize(waiting);
+            if (summary != null) {
+                mine.add(summary);
+            }
+        }
+        mine.sort(Comparator.comparingLong(PendingSummary::createdAt).reversed());
+        return mine;
+    }
+
+    /**
+     * Cancels and deletes every call that expired without an answer.
+     *
+     * <p>Nothing else does: {@link #confirm} and {@link #reject} only ever reach a call someone
+     * came back for, so without this an abandoned one keeps its snapshot — and the arguments in it
+     * — for as long as the storage lives.
+     *
+     * @return how many were discarded
+     */
+    @Override
+    public int sweepExpired() throws ApplicationException {
+        long now = System.currentTimeMillis();
+        int swept = 0;
+        for (ExecutionContext waiting : waitingCalls()) {
+            String id = waiting.getExecutionId();
+            Object expiresAt = waiting.getVariables().get(SemanticConfirmApplication.VAR_EXPIRES_AT);
+            if (expiresAt == null || now <= millis(expiresAt)) {
+                continue;
+            }
+            try {
+                cancel(id);
+                // An expired call is gone whatever keep-completed says: retention is for calls that
+                // were answered, and this one holds arguments nobody is coming back for.
+                repository.delete(id);
+                swept++;
+            } catch (Exception e) {
+                LOGGER.log(Level.WARNING, "Could not discard the expired pending call " + id, e);
+            }
+        }
+        if (swept > 0) {
+            LOGGER.info("Discarded " + swept + " expired pending call(s).");
+        }
+        return swept;
+    }
+
+    /** Every WAITING {@code semantic-confirm} execution the repository holds. */
+    private List<ExecutionContext> waitingCalls() throws ApplicationException {
+        if (repository == null) {
+            throw new ApplicationException("WorkflowConfirmationService is not configured.");
+        }
+        List<ExecutionContext> calls = new ArrayList<>();
+        try {
+            for (ExecutionContext context : repository.findByStatus(WorkflowStatus.WAITING)) {
+                if (EngineHolder.WORKFLOW_ID.equals(context.getWorkflowId())) {
+                    calls.add(context);
+                }
+            }
+        } catch (UnsupportedOperationException e) {
+            throw new ApplicationException("The configured " + EngineHolder.REPOSITORY
+                    + " cannot list pending calls. Use 'file', 'redis' or 'database'.", e);
+        } catch (WorkflowException e) {
+            throw new ApplicationException("Could not read the pending calls: " + e.getMessage(), e);
+        }
+        return calls;
+    }
+
+    /** A snapshot written by an older version, or a corrupted one, is skipped rather than fatal. */
+    private PendingSummary summarize(ExecutionContext waiting) {
+        try {
+            Object stored = waiting.getVariables().get(SemanticConfirmApplication.VAR_PENDING_CALL);
+            if (!(stored instanceof Builder call)) {
+                return null;
+            }
+            PendingCallSerializer.StoredCall pending = PendingCallSerializer.fromBuilder(call);
+            return new PendingSummary(waiting.getExecutionId(), pending.actionPath(), pending.principal(),
+                    pending.confidence(), pending.createdAt(), pending.expiresAt());
+        } catch (Exception e) {
+            LOGGER.warning("Skipping an unreadable pending call: " + waiting.getExecutionId());
+            return null;
+        }
+    }
+
+    private static String text(ExecutionContext context, String variable) {
+        Object value = context.getVariables().get(variable);
+        return value == null ? null : value.toString();
+    }
+
+    private static long millis(Object value) {
+        try {
+            return new java.math.BigDecimal(value.toString()).longValue();
+        } catch (NumberFormatException e) {
+            return Long.MAX_VALUE; // unreadable expiry: leave it alone rather than discard it
+        }
     }
 
     // ---- checks -----------------------------------------------------------------------------

@@ -28,7 +28,7 @@ public final class MemoryRoutingCache implements RoutingCache {
         final int capacity = Math.max(1, maxEntries);
         this.entries = new LinkedHashMap<>(16, 0.75f, true) {
             @Override
-            protected boolean removeEldestEntry(Map.Entry<String, Entry> eldest) {
+            protected boolean removeEldestEntry(Map.Entry eldest) {
                 return size() > capacity;
             }
         };

@@ -4,9 +4,11 @@ import org.tinystruct.AbstractApplication;
 import org.tinystruct.ApplicationException;
 import org.tinystruct.application.ActionRegistry;
 import org.tinystruct.data.component.Builder;
+import org.tinystruct.data.component.Builders;
 import org.tinystruct.system.annotation.Action;
 import org.tinystruct.system.annotation.Argument;
 import org.tinystruct.typesafe.core.api.DispatchResult;
+import org.tinystruct.typesafe.core.confirmation.PendingSummary;
 
 /**
  * The tinystruct entry point: thin {@code @Action} adapters over {@link TypesafeRuntime}.
@@ -62,6 +64,24 @@ public class SemanticDispatcher extends AbstractApplication {
         runtime().confirmations().reject(id, getContext());
         Builder b = new Builder();
         b.put("status", "CANCELLED");
+        return b;
+    }
+
+    /**
+     * Only the caller's own calls: {@link org.tinystruct.typesafe.core.confirmation.ConfirmationHandler}
+     * resolves the principal from the context, and the service filters on it. Argument values are
+     * never included.
+     */
+    @Action(value = "semantic/pending",
+            description = "List the calls you have waiting for confirmation.")
+    public Builder pending() throws ApplicationException {
+        Builders rows = new Builders();
+        for (PendingSummary summary : runtime().confirmations().list(getContext())) {
+            rows.add(summary.toBuilder());
+        }
+        Builder b = new Builder();
+        b.put("count", rows.size());
+        b.put("pending", rows);
         return b;
     }
 

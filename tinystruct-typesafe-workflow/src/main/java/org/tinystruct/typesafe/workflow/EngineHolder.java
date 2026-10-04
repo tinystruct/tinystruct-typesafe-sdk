@@ -11,6 +11,10 @@ import org.tinystruct.workflow.repository.RedisSnapshotRepository;
 import org.tinystruct.workflow.repository.SnapshotRepository;
 
 import java.nio.file.Paths;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
+import java.util.logging.Level;
 import java.util.logging.Logger;
 
 /**
@@ -32,10 +36,15 @@ public final class EngineHolder {
     public static final String REPOSITORY = "typesafe.workflow.repository";
     public static final String SNAPSHOT_DIR = "typesafe.workflow.snapshot-dir";
     public static final String KEEP_COMPLETED = "typesafe.workflow.keep-completed";
+    /** Seconds between sweeps for expired pending calls. {@code 0} switches the sweep off. */
+    public static final String SWEEP_INTERVAL = "typesafe.workflow.sweep-interval-seconds";
+
+    private static final int DEFAULT_SWEEP_INTERVAL_SECONDS = 300;
 
     private static final Object LOCK = new Object();
     private static volatile WorkflowEngine engine;
     private static volatile SnapshotRepository repository;
+    private static volatile ScheduledExecutorService sweeper;
 
     private EngineHolder() {}
 
@@ -97,9 +106,65 @@ public final class EngineHolder {
         return TypesafeConfig.bool(config.get(KEEP_COMPLETED), false);
     }
 
+    /** Seconds between sweeps, or {@code 0} if the sweep is switched off. */
+    public static int sweepIntervalSeconds(Configuration<String> config) {
+        int seconds = TypesafeConfig.integer(config.get(SWEEP_INTERVAL), DEFAULT_SWEEP_INTERVAL_SECONDS);
+        return Math.max(seconds, 0);
+    }
+
+    /**
+     * Starts the background sweep that discards pending calls nobody answered. Idempotent: the
+     * first caller wins and later ones are no-ops, so it is safe to call from {@code init()}.
+     *
+     * <p>Without it a call that is never confirmed or rejected keeps its snapshot, and the
+     * arguments in it, for as long as the storage lives. The thread is a daemon, so it does not
+     * hold up a shutdown, and a failing sweep is logged rather than allowed to kill the schedule.
+     */
+    public static void startSweeper(Configuration<String> config, ConfirmationSweep sweep) {
+        int seconds = sweepIntervalSeconds(config);
+        if (seconds == 0) {
+            LOGGER.info("Expired pending calls are not swept (" + SWEEP_INTERVAL + "=0); "
+                    + "their snapshots, and the arguments in them, will stay until something removes them.");
+            return;
+        }
+        synchronized (LOCK) {
+            if (sweeper != null) return;
+            sweeper = Executors.newSingleThreadScheduledExecutor(runnable -> {
+                Thread thread = new Thread(runnable, "semantic-confirm-sweeper");
+                thread.setDaemon(true);
+                return thread;
+            });
+            sweeper.scheduleWithFixedDelay(() -> {
+                try {
+                    sweep.run();
+                } catch (Throwable t) {
+                    LOGGER.log(Level.WARNING, "The pending-call sweep failed; will try again.", t);
+                }
+            }, seconds, seconds, TimeUnit.SECONDS);
+        }
+        LOGGER.info("Sweeping expired pending calls every " + seconds + "s.");
+    }
+
+    /** What {@link #startSweeper} runs; {@code WorkflowConfirmationService::sweepExpired} in practice. */
+    @FunctionalInterface
+    public interface ConfirmationSweep {
+        void run() throws Exception;
+    }
+
+    /** Stops the background sweep, if one is running. */
+    public static void stopSweeper() {
+        synchronized (LOCK) {
+            if (sweeper != null) {
+                sweeper.shutdownNow();
+                sweeper = null;
+            }
+        }
+    }
+
     /** For tests: replaces the shared engine and repository, and registers the definition on the new engine. */
     static void reset(WorkflowEngine newEngine, SnapshotRepository newRepository) {
         synchronized (LOCK) {
+            stopSweeper();
             engine = newEngine;
             repository = newRepository;
             if (newEngine != null) registerDefinition(newEngine);

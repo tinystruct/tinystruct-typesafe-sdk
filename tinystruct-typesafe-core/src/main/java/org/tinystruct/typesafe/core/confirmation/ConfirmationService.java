@@ -4,6 +4,8 @@ import org.tinystruct.ApplicationException;
 import org.tinystruct.system.Configuration;
 import org.tinystruct.typesafe.core.api.DispatchResult;
 
+import java.util.List;
+
 /**
  * SPI for holding a validated call that awaits human confirmation.
  *
@@ -43,4 +45,28 @@ public interface ConfirmationService {
      * @throws ConfirmationExpiredException if the call has expired
      */
     void reject(String pendingId, String principal) throws ApplicationException;
+
+    /**
+     * The calls {@code principal} has open, newest first. Never another principal's: a listing is
+     * not a way to learn what other people are about to do.
+     *
+     * <p>The default refuses, so a caller can tell "you have nothing pending" from "this
+     * implementation cannot look".
+     *
+     * @throws UnsupportedOperationException if this implementation cannot enumerate pending calls
+     */
+    default List<PendingSummary> list(String principal) throws ApplicationException {
+        throw new UnsupportedOperationException(getClass().getName() + " cannot list pending calls.");
+    }
+
+    /**
+     * Discards the calls that expired without an answer, and returns how many were discarded.
+     *
+     * <p>A call nobody answers is never reached by {@link #confirm} or {@link #reject}, so without
+     * this nothing ever removes it, or the arguments it holds. Implementations whose storage
+     * expires entries by itself have nothing to do here.
+     */
+    default int sweepExpired() throws ApplicationException {
+        return 0;
+    }
 }

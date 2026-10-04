@@ -55,6 +55,16 @@ public final class ConfirmationHandler {
         }
     }
 
+    /** The caller's own pending calls. Who is asking is resolved here, never passed in. */
+    public java.util.List<PendingSummary> list(Context context) throws ApplicationException {
+        return service().list(principals.resolve(context));
+    }
+
+    /** Discards the calls that expired without an answer; returns how many. */
+    public int sweepExpired() throws ApplicationException {
+        return service().sweepExpired();
+    }
+
     private ConfirmationService service() throws ApplicationException {
         if (service == null) {
             throw new ApplicationException("No ConfirmationService is configured (" + TypesafeConfig.CONFIRMATION_SERVICE + ").");

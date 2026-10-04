@@ -8,7 +8,14 @@ import org.tinystruct.ApplicationContext;
 import org.tinystruct.ApplicationException;
 import org.tinystruct.application.Context;
 import org.tinystruct.data.component.Builder;
+import org.tinystruct.data.component.Builders;
 import org.tinystruct.typesafe.core.api.DispatchResult;
+import org.tinystruct.typesafe.core.confirmation.ConfirmationHandler;
+import org.tinystruct.typesafe.core.confirmation.ConfirmationService;
+import org.tinystruct.typesafe.core.confirmation.DefaultPrincipalResolver;
+import org.tinystruct.typesafe.core.confirmation.PendingCall;
+import org.tinystruct.typesafe.core.confirmation.PendingSummary;
+import org.tinystruct.typesafe.core.metrics.DispatchMetrics;
 import org.tinystruct.typesafe.core.testing.MockClientRuntime;
 import org.tinystruct.typesafe.core.testing.TestApps;
 
@@ -73,6 +80,48 @@ class SemanticDispatcherTest {
         SemanticDispatcher dispatcher = dispatcherWith(new ApplicationContext());
         assertThrows(ApplicationException.class, () -> dispatcher.confirm("abc"));
         assertThrows(ApplicationException.class, () -> dispatcher.reject("abc"));
+    }
+
+    @Test
+    void pendingFailsWithoutAConfirmationService() {
+        MockClientRuntime.installReturning("create-user", "John", "ADMIN");
+        assertThrows(ApplicationException.class, () -> dispatcherWith(new ApplicationContext()).pending());
+    }
+
+    @Test
+    void pendingListsWhatTheServiceReportsForThisCaller() throws Exception {
+        long now = System.currentTimeMillis();
+        installListing(new PendingSummary("id-1", "create-user", "cli", 0.91, now, now + 300_000));
+
+        Builder out = dispatcherWith(new ApplicationContext()).pending();
+
+        assertEquals("1", out.get("count").toString());
+        Builders rows = (Builders) out.get("pending");
+        assertEquals("id-1", rows.get(0).get("pendingId").toString());
+        assertEquals("create-user", rows.get(0).get("actionPath").toString());
+        assertEquals("false", rows.get(0).get("expired").toString());
+        assertFalse(rows.get(0).containsKey("arguments"), "a listing never shows argument values");
+    }
+
+    @Test
+    void pendingIsEmptyWhenTheCallerHasNothingWaiting() throws Exception {
+        installListing();
+        assertEquals("0", dispatcherWith(new ApplicationContext()).pending().get("count").toString());
+    }
+
+    /** A runtime whose confirmation service answers a listing and nothing else. */
+    private static void installListing(PendingSummary... summaries) {
+        ConfirmationService service = new ConfirmationService() {
+            @Override public String open(PendingCall call) { throw new UnsupportedOperationException(); }
+            @Override public DispatchResult confirm(String id, String principal) { throw new UnsupportedOperationException(); }
+            @Override public void reject(String id, String principal) { throw new UnsupportedOperationException(); }
+            @Override public java.util.List<PendingSummary> list(String principal) { return java.util.List.of(summaries); }
+        };
+        DispatchMetrics metrics = new DispatchMetrics();
+        TypesafeRuntime.install(new TypesafeRuntime(
+                (input, registry, context) -> DispatchResult.rejected("not used"),
+                new ConfirmationHandler(service, new DefaultPrincipalResolver(), metrics),
+                null, metrics));
     }
 
     @Test
