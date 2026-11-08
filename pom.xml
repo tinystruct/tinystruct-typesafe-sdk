@@ -6,7 +6,7 @@
 
     <groupId>org.tinystruct</groupId>
     <artifactId>tinystruct-typesafe</artifactId>
-    <version>1.0.1</version>
+    <version>1.0.2</version>
     <packaging>pom</packaging>
     <name>tinystruct-typesafe</name>
     <description>Natural-language semantic dispatcher for tinystruct @Action methods powered by TypeSafe Jev.</description>
@@ -42,10 +42,10 @@
         <maven.compiler.source>17</maven.compiler.source>
         <maven.compiler.target>17</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-        <tinystruct.version>1.7.35</tinystruct.version>
-        <tinystruct-workflow.version>1.0.2</tinystruct-workflow.version>
-        <lettuce.version>7.6.0.RELEASE</lettuce.version>
-        <junit.version>5.11.0</junit.version>
+        <tinystruct.version>1.7.38</tinystruct.version>
+        <tinystruct-workflow.version>1.0.3</tinystruct-workflow.version>
+        <lettuce.version>7.9.0.RELEASE</lettuce.version>
+        <junit.version>5.12.2</junit.version>
         <jacoco.version>0.8.11</jacoco.version>
     </properties>
 
@@ -92,7 +92,7 @@
                 <plugin>
                     <groupId>org.apache.maven.plugins</groupId>
                     <artifactId>maven-compiler-plugin</artifactId>
-                    <version>3.13.0</version>
+                    <version>3.16.0</version>
                     <configuration>
                         <source>${maven.compiler.source}</source>
                         <target>${maven.compiler.target}</target>
@@ -167,7 +167,7 @@
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-source-plugin</artifactId>
-                <version>2.2.1</version>
+                <version>3.4.0</version>
                 <executions>
                     <execution>
                         <id>attach-sources</id>
@@ -181,7 +181,7 @@
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-javadoc-plugin</artifactId>
-                <version>3.2.0</version>
+                <version>3.12.0</version>
                 <configuration>
                     <javadocExecutable>${java.home}/bin/javadoc</javadocExecutable>
                     <encoding>UTF-8</encoding>
@@ -211,7 +211,7 @@
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-gpg-plugin</artifactId>
-                <version>1.6</version>
+                <version>3.2.8</version>
                 <executions>
                     <execution>
                         <id>sign-artifacts</id>
@@ -231,7 +231,7 @@
             <plugin>
                 <groupId>org.sonatype.central</groupId>
                 <artifactId>central-publishing-maven-plugin</artifactId>
-                <version>0.8.0</version>
+                <version>0.11.0</version>
                 <extensions>true</extensions>
                 <configuration>
                     <publishingServerId>central</publishingServerId>
